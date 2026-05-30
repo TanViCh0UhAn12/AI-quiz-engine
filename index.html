@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Quiz Operations Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Clean Print Layout Styling */
+    @media print {
+      #uploadCard, #statusContainer, #teacherSidebarContainer, header, #syncIdDisplay, button, #btnTeacherView, #btnStudentView, .no-print {
+        display: none !important;
+      }
+      body {
+        background-color: #ffffff !important;
+      }
+      .max-w-7xl {
+        max-width: 100% !important; 
+      }
+      .lg\:col-span-2 {
+        grid-column: span 3 / span 3 !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-gray-900">
+
+  <div class="max-w-7xl mx-auto px-4 py-12">
+    <header class="text-center mb-12">
+      <h1 class="text-4xl font-extrabold text-indigo-600 tracking-tight">AI Quiz Operations Engine</h1>
+      <p class="mt-2 text-lg text-gray-600">Generate comprehensive assessments and evaluate student performance instantly.</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+      
+      <div id="mainContentLeft" class="lg:col-span-2 space-y-6">
+        
+        <div id="uploadCard" class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 w-full">
+          <form id="uploadForm" class="space-y-6">
+            <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-indigo-500 transition-colors cursor-pointer relative" id="dropZone">
+              <input type="file" id="lessonFile" name="lessonFile" accept=".pdf" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required>
+              <div class="space-y-2">
+                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                  <path d="M28 8H12a4 4 0 00-4 4v20a4 4 0 004 4h24a4 4 0 004-4V20L28 8z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M28 8v12h12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div class="text-sm text-gray-600">
+                  <span class="font-medium text-indigo-600 hover:text-indigo-500" id="fileLabel">Click to upload</span> or drag and drop
+                </div>
+                <p class="text-xs text-gray-500">PDF documents up to 10MB</p>
+              </div>
+            </div>
+
+            <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors">
+              Generate Quiz Assets
+            </button>
+          </form>
+        </div>
+
+        <div id="statusContainer" class="hidden bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-center text-indigo-700 font-medium animate-pulse w-full">
+          Processing system prompt rules... Please wait.
+        </div>
+
+        <div id="quizContainer" class="hidden space-y-6 w-full">
+          <div id="navigationTabsWrapper" class="flex justify-between items-center bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex-wrap gap-2">
+            <div class="flex items-center space-x-3">
+              <span class="text-sm text-gray-500">Airtable Sync ID: <code id="syncIdDisplay" class="bg-gray-100 px-1 py-0.5 rounded font-mono"></code></span>
+              <button onclick="window.print()" class="no-print flex items-center space-x-1 px-2.5 py-1 text-xs font-semibold rounded bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors">
+                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 002-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                <span>Print/Save PDF</span>
+              </button>
+            </div>
+            <div class="flex space-x-2 no-print">
+              <button id="btnTeacherView" class="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white">Teacher Answer Key</button>
+              <button id="btnStudentView" class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">Switch to Student Test Player</button>
+            </div>
+          </div>
+
+          <div id="teacherQuizContent" class="space-y-8 w-full"></div>
+          <div id="studentViewScreen" class="hidden space-y-8 w-full"></div>
+          <div id="gradingResultScreen" class="hidden space-y-6 w-full"></div>
+        </div>
+
+      </div>
+
+      <div id="teacherSidebarContainer" class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm h-fit w-full">
+        <h4 class="text-lg font-bold text-gray-900 mb-4 pb-2 border-b">Saved Quizzes History</h4>
+        <div id="historySidebarList" class="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+          <p class="text-sm text-gray-400 italic">Syncing archive data...</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let currentQuizData = null;
+    let savedQuizzesArchive = [];
+
+    const fileInput = document.getElementById('lessonFile');
+    const fileLabel = document.getElementById('fileLabel');
+    const uploadForm = document.getElementById('uploadForm');
+    const uploadCard = document.getElementById('uploadCard');
+    const statusContainer = document.getElementById('statusContainer');
+    const quizContainer = document.getElementById('quizContainer');
+    const mainContentLeft = document.getElementById('mainContentLeft');
+    
+    const teacherSidebar = document.getElementById('teacherSidebarContainer');
+    const teacherContent = document.getElementById('teacherQuizContent');
+    const historySidebarList = document.getElementById('historySidebarList');
+    
+    const studentScreen = document.getElementById('studentViewScreen');
+    const gradingScreen = document.getElementById('gradingResultScreen');
+
+    const btnTeacher = document.getElementById('btnTeacherView');
+    const btnStudent = document.getElementById('btnStudentView');
+    const navigationTabsWrapper = document.getElementById('navigationTabsWrapper');
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const userMode = urlParams.get('mode');
+
+      if (userMode === 'student') {
+        teacherSidebar.classList.add('hidden');
+        uploadCard.classList.add('hidden');
+        if (navigationTabsWrapper) navigationTabsWrapper.classList.add('hidden');
+        
+        mainContentLeft.className = "lg:col-span-3 space-y-6";
+
+        const targetQuizId = urlParams.get('quizId');
+        if (targetQuizId) {
+          loadStudentSpecificQuiz(targetQuizId);
+        } else {
+          studentScreen.innerHTML = `<div class="bg-amber-50 text-amber-800 p-6 rounded-2xl border border-amber-200 text-center font-medium">Please access using a direct assignment quiz link provided by your teacher.</div>`;
+          studentScreen.classList.remove('hidden');
+          quizContainer.classList.remove('hidden');
+        }
+      } else {
+        loadHistoryLog();
+      }
+    });
+// Pipeline function to pull and render a secure isolated quiz instance for students
+async function loadStudentSpecificQuiz(airtableId) {
+  try {
+    studentScreen.innerHTML = `<div class="text-center text-gray-500 animate-pulse py-8">Loading assessment assets... Please wait.</div>`;
+    studentScreen.classList.remove('hidden');
+    quizContainer.classList.remove('hidden');
+    
+    const response = await fetch('/quiz-history');
+    const archives = await response.json();
+    
+    // FOOLPROOF MATCHING: Check every common variant of where the ID might live
+    const selection = archives.find(item => 
+      item.airtableId === airtableId || 
+      item.id === airtableId || 
+      (item.fields && item.fields.airtableId === airtableId)
+    );
+    
+    if (selection) {
+      // Safely unpack the inner data structure whether it's nested or flat
+      const rawQuiz = selection.quiz || (selection.fields && selection.fields.quiz) || selection;
+      
+      currentQuizData = {
+        quizTitle: selection.quizTitle || selection.LessonTitle || selection["Lesson Title"] || "Science Assessment Workspace",
+        multipleChoice: rawQuiz.multipleChoice || [],
+        fillInTheBlanks: rawQuiz.fillInTheBlanks || [],
+        shortAnswer: rawQuiz.shortAnswer || []
+      };
+      
+      buildStudentPlayer();
+      showView('student');
+    } else {
+      studentScreen.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded-xl text-center border">Requested assignment parameters could not be resolved.</div>`;
+    }
+  } catch (err) {
+    console.error(err);
+    studentScreen.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded-xl text-center border">Database sync failure encountered.</div>`;
+  }
+}
+
+    fileInput.addEventListener('change', (e) => {
+      if(e.target.files.length > 0) fileLabel.textContent = e.target.files[0].name;
+    });
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!fileInput.files || fileInput.files.length === 0) {
+        alert('Please select or drag a lesson PDF file before clicking generate.');
+        return;
+      }
+      
+      statusContainer.classList.remove('hidden');
+      quizContainer.classList.add('hidden');
+      
+      const formData = new FormData(uploadForm);
+      try {
+        const response = await fetch('/upload-lesson', { method: 'POST', body: formData });
+        const data = await response.json();
+        statusContainer.classList.add('hidden');
+
+        if (!response.ok) return alert(data.error);
+
+        const selection = data.quiz;
+        currentQuizData = {
+          quizTitle: data.quizTitle || selection.quizTitle || selection.LessonTitle || data.lessonTitle || "Assessment Workspace",
+          multipleChoice: selection.multipleChoice || [],
+          fillInTheBlanks: selection.fillInTheBlanks || [],
+          shortAnswer: selection.shortAnswer || []
+        };
+
+        document.getElementById('syncIdDisplay').textContent = data.airtableId;
+        
+        buildTeacherContent();
+        buildStudentPlayer();
+        loadHistoryLog();
+        
+        quizContainer.classList.remove('hidden');
+        showView('teacher');
+      } catch (err) {
+        statusContainer.classList.add('hidden');
+        alert('Network connectivity timeout encountered.');
+      }
+    });
+
+    btnTeacher.addEventListener('click', () => showView('teacher'));
+    btnStudent.addEventListener('click', () => showView('student'));
+
+    function showView(view) {
+      const isStudentModeCheck = new URLSearchParams(window.location.search).get('mode') === 'student';
+
+      if(view === 'teacher' && !isStudentModeCheck) {
+        teacherContent.classList.remove('hidden');
+        teacherSidebar.classList.remove('hidden'); 
+        studentScreen.classList.add('hidden');
+        gradingScreen.classList.add('hidden');
+        btnTeacher.className = "px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white";
+        btnStudent.className = "px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200";
+      } else {
+        studentScreen.classList.remove('hidden');
+        teacherContent.classList.add('hidden');
+        if (!isStudentModeCheck) {
+          teacherSidebar.classList.add('hidden');
+        }
+        btnStudent.className = "px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white";
+        btnTeacher.className = "px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200";
+      }
+    }
+
+    async function loadHistoryLog() {
+      try {
+        const response = await fetch('/quiz-history');
+        savedQuizzesArchive = await response.json();
+        renderSidebarList();
+      } catch (err) {
+        historySidebarList.innerHTML = `<p class="text-xs text-red-500">Failed to refresh background database logs.</p>`;
+      }
+    }
+
+    function renderSidebarList() {
+      if (savedQuizzesArchive.length === 0) {
+        historySidebarList.innerHTML = `<p class="text-sm text-gray-400 italic">No historical data saved yet.</p>`;
+        return;
+      }
+
+      historySidebarList.innerHTML = savedQuizzesArchive.map((item, idx) => {
+        const structuralTitle = item.quizTitle || item.LessonTitle || item["Lesson Title"] || 'Untitled Assessment';
+        return `
+        <div class="group relative p-3 border rounded-xl hover:border-indigo-500 hover:bg-indigo-50/30 cursor-pointer transition-all text-left space-y-1">
+          <div onclick="selectHistoricalQuiz(${idx})" class="pr-8">
+            <div class="font-semibold text-sm text-gray-800 line-clamp-1">${structuralTitle}</div>
+            <div class="flex justify-between text-xs text-gray-400 mt-1">
+              <span>ID: ${item.airtableId ? item.airtableId.substring(3) : '---'}...</span>
+              <span>${item.dateGenerated || 'Recent'}</span>
+            </div>
+          </div>
+          
+          <button 
+            onclick="event.stopPropagation(); deleteQuiz('${item.airtableId}', '${structuralTitle.replace(/'/g, "\\'")}')" 
+            class="absolute top-3 right-3 text-gray-400 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 p-1"
+            title="Delete Quiz"
+          >
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>`;
+      }).join('');
+    }
+
+    window.selectHistoricalQuiz = function(index) {
+      const selection = savedQuizzesArchive[index];
+      currentQuizData = {
+        quizTitle: selection.quizTitle || selection.LessonTitle || selection["Lesson Title"] || `Assessment Key (${selection.airtableId})`,
+        multipleChoice: selection.multipleChoice || [],
+        fillInTheBlanks: selection.fillInTheBlanks || [],
+        shortAnswer: selection.shortAnswer || []
+      };
+      
+      document.getElementById('syncIdDisplay').textContent = selection.airtableId;
+      buildTeacherContent();
+      buildStudentPlayer();
+      
+      gradingScreen.classList.add('hidden');
+      quizContainer.classList.remove('hidden');
+      showView('teacher');
+    };
+
+    window.deleteQuiz = async function(airtableId, title) {
+      if (!confirm(`Are you sure you want to permanently delete "${title}"?`)) return;
+
+      try {
+        const response = await fetch(`/quiz-history/${airtableId}`, { method: 'DELETE' });
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+          const currentSyncId = document.getElementById('syncIdDisplay').textContent;
+          if (currentSyncId === airtableId) quizContainer.classList.add('hidden');
+          loadHistoryLog();
+          alert('Quiz removed successfully.');
+        } else {
+          alert(result.error || 'Failed to remove quiz record.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network connectivity error during deletion processing.');
+      }
+    };
+
+    function buildTeacherContent() {
+      let html = `<h2 class="text-3xl font-bold text-gray-900 mb-6">${currentQuizData.quizTitle} (Master Answer Key)</h2>`;
+      
+      html += `<div class="space-y-4 mb-8"><h3 class="text-xl font-semibold text-indigo-600 border-b pb-2">Part A: Multiple Choice Answers</h3>`;
+      currentQuizData.multipleChoice.forEach((q, i) => {
+        html += `
+          <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-2">
+            <div class="flex justify-between items-start">
+              <p class="font-medium text-gray-800">${i+1}. ${q.question}</p>
+              <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">${q.difficulty || 'Medium'}</span>
+            </div>
+            <div class="text-sm font-bold text-emerald-600 bg-emerald-50 p-3 rounded-xl border border-emerald-100 mt-2">
+              Correct Choice: <span class="underline">${q.correctAnswer}</span>
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+
+      html += `<div class="space-y-4 mb-8"><h3 class="text-xl font-semibold text-indigo-600 border-b pb-2">Part B: Fill In The Blanks Answers</h3>`;
+      currentQuizData.fillInTheBlanks.forEach((q, i) => {
+        html += `
+          <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-2">
+            <div class="flex justify-between items-start">
+              <p class="font-medium text-gray-800">${i+1}. ${q.sentence ? q.sentence.replace('[___]', '_______') : '_______'}</p>
+              <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">${q.difficulty || 'Medium'}</span>
+            </div>
+            <div class="text-sm font-bold text-emerald-600 bg-emerald-50 p-3 rounded-xl border border-emerald-100 mt-2">
+              Target Key Text: <span class="underline">${q.correctAnswer}</span>
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+
+      html += `<div class="space-y-4"><h3 class="text-xl font-semibold text-indigo-600 border-b pb-2">Part C: Analytical Short Answer Rubrics</h3>`;
+      currentQuizData.shortAnswer.forEach((q, i) => {
+        html += `
+          <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-2">
+            <div class="flex justify-between items-start">
+              <p class="font-medium text-gray-800">${i+1}. ${q.question}</p>
+              <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">${q.difficulty || 'Medium'}</span>
+            </div>
+            <div class="text-sm text-indigo-700 bg-indigo-50 p-4 rounded-xl border border-indigo-100 mt-2">
+              <strong>AI Evaluation Rubric Guide:</strong> ${q.gradingGuide || 'No rubric guide defined.'}
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+      
+      teacherContent.innerHTML = html;
+    }
+
+    function buildStudentPlayer() {
+      let html = `
+        <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 text-center lg:text-left">
+          <h2 class="text-3xl font-black text-gray-900 tracking-tight">${currentQuizData.quizTitle}</h2>
+          <p class="text-sm text-gray-500 mt-1">Read each interactive module closely. Answer every prompt to complete your skill profile evaluation report.</p>
+        </div>
+        <form id="studentExamForm" class="space-y-8">
+      `;
+
+      html += `<div class="space-y-4"><h3 class="text-xl font-bold text-indigo-600 flex items-center gap-2">🚀 Stage 1: Multiple Choice Foundations</h3>`;
+      if (currentQuizData.multipleChoice.length === 0) {
+        html += `<p class="text-sm text-gray-400 italic bg-gray-50 p-4 rounded-xl border border-dashed">No multiple choice questions available for this record.</p>`;
+      } else {
+        currentQuizData.multipleChoice.forEach((q, i) => {
+          html += `
+            <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+              <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 tracking-wider uppercase">Question ${i+1}</span>
+              <p class="font-semibold text-gray-800 text-base">${q.question}</p>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                ${q.options ? q.options.map(opt => `
+                  <label class="flex items-center space-x-3 p-3 border border-gray-200 rounded-xl hover:bg-indigo-50/50 cursor-pointer transition-all text-sm font-medium">
+                    <input type="radio" name="mcq_${i}" value="${opt}" class="text-indigo-600 focus:ring-indigo-500" required>
+                    <span>${opt}</span>
+                  </label>
+                `).join('') : ''}
+              </div>
+
+              <details class="group border-t border-gray-100 pt-3 no-print">
+                <summary class="list-none flex items-center text-xs font-medium text-amber-600 cursor-pointer hover:text-amber-700 select-none">
+                  <svg class="h-4 w-4 mr-1 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                  Stuck? Reveal a concept hint
+                </summary>
+                <p class="mt-2 text-xs text-gray-600 bg-amber-50 p-3 rounded-xl border border-amber-100 italic">
+                  💡 ${q.hint || "Think about how this relates to your lesson context."}
+                </p>
+              </details>
+            </div>`;
+        });
+      }
+      html += `</div>`;
+
+      html += `<div class="space-y-4"><h3 class="text-xl font-bold text-indigo-600">⚡ Stage 2: Contextual Vocabulary Matching</h3>`;
+      if (currentQuizData.fillInTheBlanks.length === 0) {
+        html += `<p class="text-sm text-gray-400 italic bg-gray-50 p-4 rounded-xl border border-dashed">No fill-in-the-blank statements available for this record.</p>`;
+      } else {
+        currentQuizData.fillInTheBlanks.forEach((q, i) => {
+          html += `
+            <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-3">
+              <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 tracking-wider uppercase">Blank #${i+1}</span>
+              <p class="font-medium text-gray-800">${q.sentence ? q.sentence.replace('[___]', '_______') : '_______'}</p>
+              <input type="text" name="blank_${i}" placeholder="Type your context answer here..." class="w-full max-w-md px-4 py-2.5 border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm transition-all" required>
+            </div>`;
+        });
+      }
+      html += `</div>`;
+
+      html += `<div class="space-y-4"><h3 class="text-xl font-bold text-indigo-600">🧠 Stage 3: Deep Synthesis Short Answers</h3>`;
+      if (currentQuizData.shortAnswer.length === 0) {
+        html += `<p class="text-sm text-gray-400 italic bg-gray-50 p-4 rounded-xl border border-dashed">No short answer challenges available for this record.</p>`;
+      } else {
+        currentQuizData.shortAnswer.forEach((q, i) => {
+          html += `
+            <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-3">
+              <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 tracking-wider uppercase">Analytical Challenge ${i+1}</span>
+              <p class="font-semibold text-gray-800">${q.question}</p>
+              <textarea name="short_${i}" rows="3" placeholder="Provide your comprehensive conceptual rationale explanation here..." class="w-full p-4 border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm transition-all" required></textarea>
+            </div>`;
+        });
+      }
+      html += `</div>`;
+
+      html += `
+        <button type="submit" class="no-print w-full py-4 bg-emerald-600 text-white font-bold rounded-xl shadow-lg hover:bg-emerald-700 transition-colors transform active:scale-[0.99] transition-transform">
+          Submit Final Exam Responses
+        </button>
+        </form>
+      `;
+
+      studentScreen.innerHTML = html;
+      bindStudentFormSubmit();
+    }
+
+    function bindStudentFormSubmit() {
+      const formElement = document.getElementById('studentExamForm');
+      if(!formElement) return;
+
+      formElement.addEventListener('submit', async (examEvent) => {
+        examEvent.preventDefault();
+        const examData = new FormData(examEvent.target);
+        
+        gradingScreen.innerHTML = `<div class="bg-indigo-50 text-indigo-700 p-6 rounded-xl text-center font-medium animate-pulse border border-indigo-100">Executing backend AI evaluation grading loops... Please sit tight.</div>`;
+        gradingScreen.classList.remove('hidden');
+        window.scrollTo({ top: gradingScreen.offsetTop, behavior: 'smooth' });
+
+        let mcqCorrect = 0;
+        currentQuizData.multipleChoice.forEach((q, i) => {
+          if (examData.get(`mcq_${i}`) === q.correctAnswer) mcqCorrect++;
+        });
+
+        let blankCorrect = 0;
+        currentQuizData.fillInTheBlanks.forEach((q, i) => {
+          const studentAns = (examData.get(`blank_${i}`) || "").trim().toLowerCase();
+          const targetAns = (q.correctAnswer || "").trim().toLowerCase();
+          if (studentAns === targetAns) blankCorrect++;
+        });
+
+        const targetShortQuestions = currentQuizData.shortAnswer;
+        const studentShortAnswers = [];
+        targetShortQuestions.forEach((q, i) => {
+          studentShortAnswers.push(examData.get(`short_${i}`));
+        });
+
+        try {
+          const evalResponse = await fetch('/grade-short-answers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ questions: targetShortQuestions, studentAnswers: studentShortAnswers })
+          });
+
+          const aiGrading = await evalResponse.json();
+          const totalEarnedPoints = mcqCorrect + blankCorrect + (aiGrading.totalShortAnswerScore || 0);
+          const totalPossiblePoints = currentQuizData.multipleChoice.length + currentQuizData.fillInTheBlanks.length + (targetShortQuestions.length * 5);
+
+          let finalReportHtml = `
+            <div class="bg-white rounded-3xl border border-gray-200 shadow-xl p-8 space-y-8">
+              <div class="text-center border-b pb-6">
+                <div class="inline-flex p-3 bg-emerald-50 rounded-full text-emerald-600 mb-3">
+                  <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <h3 class="text-3xl font-black text-gray-900 tracking-tight">Mission Accomplished!</h3>
+                <div class="text-6xl font-black text-indigo-600 mt-3">${totalEarnedPoints} <span class="text-2xl font-bold text-gray-400">/ ${totalPossiblePoints} XP</span></div>
+                <p class="text-sm text-gray-500 mt-2 max-w-md mx-auto">Great effort! Review your personal AI Coach insights below to unlock total mastery.</p>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="p-4 bg-emerald-50 rounded-2xl text-center">
+                  <div class="text-xs font-bold text-emerald-700 uppercase">Foundations</div>
+                  <div class="font-extrabold text-2xl text-emerald-800 mt-1">${mcqCorrect} / ${currentQuizData.multipleChoice.length}</div>
+                </div>
+                <div class="p-4 bg-blue-50 rounded-2xl text-center">
+                  <div class="text-xs font-bold text-blue-700 uppercase">Contextual</div>
+                  <div class="font-extrabold text-2xl text-blue-800 mt-1">${blankCorrect} / ${currentQuizData.fillInTheBlanks.length}</div>
+                </div>
+                <div class="p-4 bg-purple-50 rounded-2xl text-center">
+                  <div class="text-xs font-bold text-purple-700 uppercase">AI Grade</div>
+                  <div class="font-extrabold text-2xl text-purple-800 mt-1">${aiGrading.totalShortAnswerScore || 0} / ${targetShortQuestions.length * 5}</div>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <h4 class="font-bold text-gray-800 text-lg flex items-center gap-2">
+                  <span>🧠</span> AI Coach Feedback Session:
+                </h4>
+            `;
+
+          if (aiGrading.evaluations && aiGrading.evaluations.length > 0) {
+            aiGrading.evaluations.forEach(evalObj => {
+              const score = evalObj.scoreAwarded;
+              const cardColor = score >= 4 ? 'bg-emerald-50/30 border-emerald-200' : score >= 2 ? 'bg-amber-50/30 border-amber-200' : 'bg-rose-50/30 border-rose-200';
+              const badgeColor = score >= 4 ? 'bg-emerald-100 text-emerald-800' : score >= 2 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800';
+
+              finalReportHtml += `
+                <div class="p-5 rounded-2xl border ${cardColor} space-y-2 transition-all">
+                  <div class="flex justify-between items-center font-semibold text-sm">
+                    <span class="text-gray-800 text-base">Analytical Concept Challenger #${evalObj.questionIndex + 1}</span>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold ${badgeColor}">Score: ${score} / 5</span>
+                  </div>
+                  <div class="text-sm text-gray-600 bg-white/80 p-4 rounded-xl border border-gray-100 mt-2 shadow-sm leading-relaxed">
+                     ${evalObj.rationale}
+                  </div>
+                </div>`;
+            });
+          } else {
+            finalReportHtml += `<p class="text-sm text-gray-400 italic">No short answer breakdown generated.</p>`;
+          }
+
+          finalReportHtml += `</div></div>`;
+          gradingScreen.innerHTML = finalReportHtml;
+          window.scrollTo({ top: gradingScreen.offsetTop, behavior: 'smooth' });
+
+        } catch (err) {
+          console.error(err);
+          gradingScreen.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200">System evaluation pipeline error during assessment.</div>`;
+        }
+      });
+    }
+  </script>
+</body>
+</html>
